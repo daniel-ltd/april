@@ -1,0 +1,38 @@
+version: "3.9"
+   
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: april_mysql
+    volumes:
+      - ./mysql:/var/lib/mysql
+    ports:
+      - 4003:3306
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: april_dev
+      MYSQL_USER: april_admin
+      MYSQL_PASSWORD: april_admin
+
+  phpmyadmin:
+    image: phpmyadmin
+    container_name: april_phpmyadmin
+    ports:
+      - 4002:80
+    environment:
+      PMA_ARBITRARY: 1
+      PMA_HOST: mysql
+      PMA_USER: april_admin
+      PMA_PASSWORD: april_admin
+    depends_on:
+      - mysql
+
+  server:
+    build: ./elixir
+    container_name: april_server
+    volumes:
+      - ../server:/webapp
+    ports:
+      - 4001:4000
+    depends_on:
+      - mysql

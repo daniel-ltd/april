@@ -4,7 +4,8 @@ defmodule AprilWeb.SessionController do
   alias April.{
     UserManager,
     User,
-    Auth.Guardian
+    Error,
+    Auth.Guardian,
   }
 
   # def sign_up(conn, _) do
@@ -45,6 +46,8 @@ defmodule AprilWeb.SessionController do
   end
 
   def info(conn, _) do
+    # raise Error
+    raise Error, code: Error.c_IS_INVALID(), reason: "test"
     json(conn, "Test")
   end
 end

@@ -1,6 +1,11 @@
 defmodule AprilWeb.ErrorView do
   use AprilWeb, :view
 
+  alias April.Error
+
+  def render("error.json", %{error: %Error{} = error}), do: %{errors: [error]}
+  def render("error.json", %{error: error}), do: %{errors: error}
+
   # If you want to customize a particular status code
   # for a certain format, you may uncomment below.
   # def render("500.json", _assigns) do

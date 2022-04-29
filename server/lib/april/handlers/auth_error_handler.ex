@@ -1,13 +1,12 @@
 defmodule April.AuthErrorHandler do
   import Plug.Conn
 
+  alias April.Error
+
   @behaviour Guardian.Plug.ErrorHandler
 
   @impl Guardian.Plug.ErrorHandler
-  def auth_error(conn, {type, _reason}, _opts) do
-    body = to_string(type)
-    conn
-    |> put_resp_content_type("text/plain")
-    |> send_resp(401, body)
+  def auth_error(_conn, {type, _reason}, _opts) do
+    raise Error, code: type
   end
 end

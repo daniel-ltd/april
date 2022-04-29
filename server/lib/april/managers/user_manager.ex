@@ -6,7 +6,7 @@ defmodule April.UserManager do
   import Ecto.Query, warn: false
   alias April.Repo
 
-  alias April.UserManager.User
+  alias April.User
 
   alias Argon2
 

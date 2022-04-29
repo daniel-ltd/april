@@ -1,4 +1,4 @@
-defmodule April.UserManager.User do
+defmodule April.User do
   use Ecto.Schema
   import Ecto.Changeset
 

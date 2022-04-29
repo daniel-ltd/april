@@ -1,7 +1,11 @@
 defmodule AprilWeb.SessionController do
   use AprilWeb, :controller
 
-  alias April.{UserManager, UserManager.User, UserManager.Guardian}
+  alias April.{
+    UserManager,
+    User,
+    Auth.Guardian
+  }
 
   # def sign_up(conn, _) do
   #   changeset = UserManager.change_user(%User{})
@@ -40,4 +44,7 @@ defmodule AprilWeb.SessionController do
     |> json("success")
   end
 
+  def info(conn, _) do
+    json(conn, "Test")
+  end
 end

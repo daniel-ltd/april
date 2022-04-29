@@ -1,4 +1,4 @@
-defmodule April.UserManager.Guardian do
+defmodule April.Auth.Guardian do
   use Guardian, otp_app: :guardian
 
   alias April.UserManager

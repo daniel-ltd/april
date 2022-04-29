@@ -17,7 +17,7 @@ config :april, AprilWeb.Endpoint,
   pubsub_server: April.PubSub,
   live_view: [signing_salt: "BLNaxL7F"]
 
-config :guardian, April.UserManager.Guardian,
+config :guardian, April.Auth.Guardian,
   issuer: "april",
   secret_key: "DqqpmlOiywSc+5t272OSlPY+sGVpcxHIYqLK5ufN/0oE/elsf/0D92vn1jffKXfg"
 

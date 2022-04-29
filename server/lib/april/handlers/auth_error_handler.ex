@@ -1,4 +1,4 @@
-defmodule April.UserManager.ErrorHandler do
+defmodule April.AuthErrorHandler do
   import Plug.Conn
 
   @behaviour Guardian.Plug.ErrorHandler

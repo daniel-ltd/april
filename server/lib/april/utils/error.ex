@@ -3,6 +3,7 @@ defmodule April.Error do
   defexception [:code, :reason]
   @type t :: %__MODULE__{code: String.t | atom, reason: String.t}
 
+  def c_NOT_FOUND, do: "not_found"
   def c_REQUIRED_FIELD, do: "required"
   def c_NO_RESULT_FOUND, do: "no_results_error"
   def c_IS_INVALID, do: "is_invalid"
@@ -28,6 +29,7 @@ defmodule April.Error do
   def c_NOT_EQUAL, do: "not_equal_to"
 
   def c_INTERNAL_SERVER_ERROR, do: "internal_server_error"
+  def c_TEMPLATE_NOT_FOUND, do: "template_not_found"
   def c_UNKNOWN_ERROR, do: "unknow_error"
 
   @impl true
@@ -76,10 +78,10 @@ defmodule April.Error do
         {:internal_server_error, %__MODULE__{code: _get_mysql_error_code(reason.mysql.code)}}
 
       %Phoenix.Router.NoRouteError{} ->
-        {:not_found, nil}
+        {:not_found, %__MODULE__{code: c_NOT_FOUND()}}
 
       _ ->
-        {:internal_server_error, nil}
+        {:internal_server_error, %__MODULE__{code: c_INTERNAL_SERVER_ERROR()}}
     end
   end
 

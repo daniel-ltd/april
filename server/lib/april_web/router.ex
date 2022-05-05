@@ -18,6 +18,7 @@ defmodule AprilWeb.Router do
     pipe_through :api
     # post "/sign_up", SessionController, :sign_up
     post "/sign_in", SessionController, :sign_in
+    post "/validate", ValidationController, :validate
 
     pipe_through :ensure_auth
     post "/sign_out", SessionController, :sign_out
@@ -32,8 +33,11 @@ defmodule AprilWeb.Router do
       |> put_view(ErrorView)
       |> render("error.json", error: error)
     else
-      {status, nil} -> send_resp(conn, status, "")
-      _ -> send_resp(conn, :internal_server_error, "")
+      _ ->
+        conn
+        |> put_status(:internal_server_error)
+        |> put_view(ErrorView)
+        |> render("500.json")
     end
   end
 end

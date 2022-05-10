@@ -3,28 +3,65 @@ defmodule AprilWeb.ValidationController do
 
   alias April.Validator
 
+  def test_change(_title, title) do
+    if title == "foo" do
+      [title: {"cannot be foo", [validation: :change, kind: :not_equal_to, type: :string]}]
+    else
+      []
+    end
+  end
+
   @api_param_types %{
-    year: [type: :intedfsdger, required: true],
-    school_year: [type: :integer, required: true],
-    school_textbooks: [
+    temp: [type: :boolean, acceptance: []],
+
+    title: [type: :string, change: &AprilWeb.ValidationController.test_change/2],
+
+    email: [type: :string, format: ~r/@/, confirmation: [required: true]],
+
+    name: [type: :string, required: true, exclusion: ["admin", "superadmin"], length: [is: 6]],
+    age: [type: :integer, inclusion: 0..99],
+    pi: [type: :float, required: true, number: [greater_than: 3, less_than: 5]],
+
+    pets: [type: {:array, :string}, subset: ["cat", "dog", "parrot"]],
+
+    student: [
       type: {
         :map,
         %{
-          subject_code: [type: :string, required: true],
-          code: [type: :string, required: true]
+          id: [type: :string, required: true],
+          class: [type: :integer, required: true]
         }
       },
       required: true
+    ],
+
+    address: [
+      type: {
+        :map_value,
+        %{
+          street: [type: :string, required: true],
+          country: [type: :string, required: true]
+        }
+      },
+      required: true
+    ],
+
+    array_integer: [type: {:array, :integer}, required: true],
+    array_string: [type: {:array, :string}, required: true],
+
+    array_map: [
+      type: {
+        :array,
+        %{
+          id: [type: :string, required: true],
+          class: [type: :integer, required: true]
+        }
+      }
     ]
   }
   def validate(conn, params) do
-    Validator.parse_nested_types("params", "sdf")
-    %{
-      year: year,
-      school_year: school_year,
-      school_textbooks: school_textbooks
-    } = @api_param_types
-    |> Validator.parse_nested_types(params)
+    @api_param_types
+    |> Validator.parse(params)
     |> Validator.get_validated_changes!()
     # |> IO.inspect()
 

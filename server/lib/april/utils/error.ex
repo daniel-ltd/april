@@ -1,7 +1,9 @@
 defmodule April.Error do
   @derive {Jason.Encoder, only: [:code, :reason]}
-  defexception [:code, :reason]
-  @type t :: %__MODULE__{code: String.t | atom, reason: String.t}
+  defexception [:code, :reason, :message]
+
+  @type error_code :: String.t
+  @type t :: %__MODULE__{code: error_code, reason: String.t, message: String.t}
 
   def c_NOT_FOUND, do: "not_found"
   def c_REQUIRED_FIELD, do: "required"
@@ -33,9 +35,12 @@ defmodule April.Error do
   def c_UNKNOWN_ERROR, do: "unknow_error"
 
   @impl true
-  def message(error) do
+  def message(%{code: code, reason: reason, message: mgs}) do
     """
-    an error was raised #{inspect(error)}
+    an error was raised with message: #{inspect(mgs)}
+
+    code: #{inspect(code)}
+    reason: #{inspect(reason)}
     """
   end
 
@@ -43,10 +48,11 @@ defmodule April.Error do
   def exception(opts) do
     code  = Keyword.get(opts, :code, c_INTERNAL_SERVER_ERROR())
     reason = Keyword.get(opts, :reason)
-    %__MODULE__{code: code, reason: reason}
+    msg = Keyword.get(opts, :message)
+    %__MODULE__{code: code, reason: reason, message: msg}
   end
 
-  # TODO add func doc
+  @spec transform(t | Exception.t) :: {atom, t}
   def transform(%__MODULE__{code: code} = reason) do
     err_500 = c_INTERNAL_SERVER_ERROR()
     case code do
@@ -59,7 +65,6 @@ defmodule April.Error do
     end
   end
 
-  # TODO add func doc
   def transform(reason) do
     case reason do
       %Ecto.InvalidChangesetError{} ->
@@ -85,12 +90,14 @@ defmodule April.Error do
     end
   end
 
+  @spec _transform_changeset_errors(Ecto.Changeset.t) :: [t]
   defp _transform_changeset_errors(%Ecto.Changeset{} = changeset) do
     changeset.errors
     |> Enum.reverse()
     |> Enum.map(fn {k, {_, opts}} -> %__MODULE__{code: _get_changset_error_code(opts), reason: k} end)
   end
 
+  @spec _get_changset_error_code(Enum.t) :: error_code
   defp _get_changset_error_code(opts) do
     validation = Keyword.get(opts, :validation)
     kind = Keyword.get(opts, :kind)
@@ -172,6 +179,7 @@ defmodule April.Error do
     end
   end
 
+  @spec _get_mysql_error_code(number) :: error_code
   defp _get_mysql_error_code(code) do
     case code do
       1452 ->

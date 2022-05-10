@@ -5,66 +5,146 @@ defmodule April.Validator do
     Error,
   }
 
-  # =============================================
-  # parse(%Changeset{} changeset, %{__struct__} struct, %{} params, [] permitted, [] opts)
-  # parse(%Changeset{} changeset, %{} types, %{} params, [] opts)
-  # parse(%{__struct__} struct, %{} params, [] permitted, [] opts)
-  # parse(%{} types, %{} params, [] opts)
-  # =============================================
+  @type type_validate :: [
+    type: atom() | {:array, atom()} | {:array, map()},
+    acceptance: [],
+    change: (atom(), term() -> [{atom(), String.t()} | {atom(), {String.t(), Keyword.t()}}]),
+    confirmation: [] | [{:required, boolean()}],
+    exclusion: Enum.t(),
+    format: Regex.t(),
+    inclusion: Enum.t(),
+    length: [{:is, :number}, {:min, :number}, {:max, :number}, {:count, :graphemes | :codepoints}],
+    number: [{:less_than, :number}, {:greater_than, :number}, {:less_than_or_equal_to, :number}, {:greater_than_or_equal_to, :number}, {:equal_to, :number}, {:not_equal_to, :number}],
+    required: boolean(),
+    subset: Enum.t()
+  ]
+
+  @type types :: %{atom() => type_validate()}
+
   @default_changeset_data %{}
+  @supported_validations [:acceptance, :change, :confirmation, :exclusion, :format, :inclusion, :length, :number, :required, :subset]
+  
+  @doc """
+  A wrapped function based on Ecto.Changeset customized for parse nested `types` to validate `params`
 
-  def parse(%Changeset{} = changeset, %{__struct__: module} = struct, %{} = params, permitted, opts) when is_list(opts) do
-    cs1 = %{changeset | data: @default_changeset_data}
-    cs2 = %{module.validate_fields(struct, params, permitted, opts) | data: @default_changeset_data}
-    %{Changeset.merge(cs1, cs2) | types: _merge_changeset_types(cs1.types, cs2.types)}
-  end
+  ## Custom validate types
+    * Validate array of map type
+        params = %{
+          "students" => [
+            %{
+              "id" => 1,
+              "name" => "John",
+              "score" => 7
+            },
+            ...
+          ]
+        }
 
-  def parse(data, types, params, opts \\ [])
+        types = %{
+          students: [
+            type: {
+              :array,
+              %{
+                id: [type: :integer, required: true],
+                name: [type: :string, required: true],
+                score: [type: :float, number: [min: 0, max: 10]]
+              }
+            }
+          ]
+        }
 
-  def parse(%Changeset{} = changeset, %{__struct__: _} = struct, %{} = params, permitted) do
-    parse(changeset, struct, params, permitted, [])
-  end
+    * Validate map with pairs of key and value
+        params = %{
+          "user" => %{
+            "id" => "st-001",
+            "name" => "John",
+            "email" => "example@example.com",
+            "email_confirmation" => "example@example.com"
+          }
+        }
 
-  def parse(%Changeset{} = changeset, %{} = types, %{} = params, opts) do
-    cs1 = %{changeset | data: @default_changeset_data}
-    cs2 = Changeset.cast({@default_changeset_data, types}, params, Map.keys(types), opts)
-    %{Changeset.merge(cs1, cs2) | types: _merge_changeset_types(cs1.types, cs2.types)}
-  end
+        types = %{
+          user: [
+            type: {
+              :map,
+              %{
+                id: [type: :string, required: true],
+                name: [type: :string, required: true, exclusion: ["admin", "superadmin"], length: [min: 3]],
+                email: [type: :string, format: ~r/@/, confirmation: [required: true]]
+              }
+            },
+            required: true
+          ]
+        }
 
-  def parse(%{__struct__: module} = struct, %{} = params, permitted, opts) when is_list(permitted) do
-    module.validate_fields(struct, params, permitted, opts)
-  end
+    * Validate map value only
+        params = %{
+          "address" => %{
+            "0" => %{
+              "street" => "somewhere",
+              "country" => "brazil"
+            },
+            "1" => %{
+              "street" => "elsewhere",
+              ...
+            },
+            ...
+          }
+        }
 
-  def parse(%{} = types, %{} = params, opts, _) when is_list(opts) do
-    Changeset.cast({@default_changeset_data, types}, params, Map.keys(types), opts)
-  end
+        types = %{
+          address: [
+            type: {
+              :map_value,
+              %{
+                street: [type: :string, required: true],
+                country: [type: :string, required: true],
+                zipcode: [type: :string, length: [is: 6], change: &test_change/2]
+              }
+            },
+            required: true
+          ]
+        }
 
-  def parse(%{} = types, %{} = params) do
-    Changeset.cast({@default_changeset_data, types}, params, Map.keys(types))
-  end
+  ## Ecto primitive types
+    * :id
+    * :binary_id
+    * :integer
+    * :float
+    * :boolean
+    * :string
+    * :binary
+    * {:array, inner_type}
+    * :map
+    * {:map, inner_type}
+    * :decimal
+    * :date
+    * :time
+    * :time_usec
+    * :naive_datetime
+    * :naive_datetime_usec
+    * :utc_datetime
+    * :utc_datetime_usec
 
-  defp _merge_changeset_types(type1, type2) do
-    Map.merge(type1, type2, fn k, v1, v2 ->
-      if v1 == v2 do
-        v1
-      else
-        raise(
-          Error,
-          code: Error.c_INTERNAL_SERVER_ERROR(),
-          message: "conflict merge changeset types on field #{inspect(k)} with type #{inspect(v1)} and #{inspect(v2)}"
-        )
-      end
-    end)
-  end
+  ## Examples
+  params = %{"name" => "John", "age": 24}
+  types = %{
+    name: [type: :string, required: true],
+    age: [type: :interger, required: true, inclusion: 1..150]
+  }
 
-  # =================
+  %{name, age} =
+    types
+    |> parse(params)
+    |> get_validated_changes!()
+  """
+  @spec parse(types, map | Enum.t, Keyword.t) :: Ecto.Changeset.t
+  def parse(types, params, opts \\ [])
 
-  def parse_nested_types(types, params, opts \\ [])
-
-  def parse_nested_types(%{} = types, params, opts) when is_list(params) do
+  def parse(%{} = types, params, opts) when is_list(params) do
     result =
-      Enum.reduce(params, {[], []}, fn elm, {success, failure} ->
-        nested_cs = parse_nested_types(types, elm, opts)
+      Enum.reduce(params, {[], []}, fn el, {success, failure} ->
+        nested_cs = parse(types, el, opts)
         if nested_cs.valid? do
           {[nested_cs.changes | success], failure}
         else
@@ -87,15 +167,16 @@ defmodule April.Validator do
     end
   end
 
-  def parse_nested_types(%{} = types, params, opts) when is_map(params) do
-    {self_types, nested_types, self_validations} =
+  def parse(%{} = types, params, opts) when is_map(params) do
+    {self_types, nested_types, validate_func} =
       Enum.reduce(types, {%{}, %{}, []},
         fn {field, type_validate}, {self_types, nested_types, validations} ->
 
           type = Keyword.get(type_validate, :type)
-          validations = _get_validations(validations, field, type_validate)
+          validations = _get_validations(field, type_validate, validations)
 
           case type do
+            # validate array of map
             {:array, %{} = _} ->
               {
                 Map.put(self_types, field, {:array, :map}),
@@ -103,6 +184,7 @@ defmodule April.Validator do
                 validations
               }
 
+            # validate map with pairs of key and value
             {:map, %{} = _} ->
               {
                 Map.put(self_types, field, :map),
@@ -110,13 +192,15 @@ defmodule April.Validator do
                 validations
               }
 
-            {:object, %{} = _} ->
+            # validate map value only
+            {:map_value, %{} = _} ->
               {
                 Map.put(self_types, field, :map),
                 Map.put(nested_types, field, type),
                 validations
               }
 
+            # validate ecto primitive types
             _ ->
               {
                 Map.put(self_types, field, type),
@@ -128,21 +212,21 @@ defmodule April.Validator do
 
     changeset =
       Enum.reduce(
-        self_validations,
-        parse(self_types, params, opts),
-        fn {validate_func, opts}, cs ->
-          apply(Changeset, validate_func, [cs | opts])
+        validate_func,
+        Changeset.cast({@default_changeset_data, self_types}, params, Map.keys(self_types), opts),
+        fn {func, opts}, cs ->
+          apply(Changeset, func, [cs | opts])
         end
       )
 
     Enum.reduce(nested_types, changeset, fn {field, types}, cs ->
       nested_cs =
         case types do
-          {:map, %{} = types} ->
-            parse_nested_types(types, Map.values(Changeset.get_change(cs, field, %{})), opts)
+          {:map_value, %{} = types} ->
+            parse(types, Map.values(Changeset.get_change(cs, field, %{})), opts)
 
           {_, types} ->
-            parse_nested_types(types, Changeset.get_change(cs, field), opts)
+            parse(types, Changeset.get_change(cs, field), opts)
 
           _ ->
             raise(
@@ -160,9 +244,9 @@ defmodule April.Validator do
     end)
   end
 
-  def parse_nested_types(%{} = _types, params, _opts) when is_nil(params), do: %Changeset{valid?: true}
+  def parse(%{} = _types, params, _opts) when is_nil(params), do: %Changeset{valid?: true}
 
-  def parse_nested_types(types, params, _opts) do
+  def parse(types, params, _opts) do
     raise(
       Error,
       code: Error.c_INTERNAL_SERVER_ERROR(),
@@ -170,27 +254,27 @@ defmodule April.Validator do
     )
   end
 
-  @supported_validations [:acceptance, :change, :confirmation, :exclusion, :format, :inclusion, :length, :number, :required, :subset]
-  defp _get_validations(validations, field, validate) do
-    validate
+  @spec _get_validations(atom, type_validate, Enum.t) :: Ecto.Changeset.t 
+  defp _get_validations(field, type_validate, validations) do
+    type_validate
     |> Keyword.take(@supported_validations)
-    |> Enum.reduce(validations, fn {v, opts}, validations ->
-        case v do
-          :required ->
-            if Keyword.get(validate, :required, false) do
-              Keyword.update(validations, :validate_required, [[field]], fn [arr] -> [[field | arr]] end)
-            else
-              validations
-            end
+    |> Enum.reduce(validations, fn {validate, opts}, validations ->
+        case {validate, opts} do
+          {:required, false} ->
+            validations
+
+          {:required, true} ->
+            Keyword.update(validations, :validate_required, [[field]], fn [arr] -> [[field | arr]] end)
 
           _ ->
-            [{String.to_atom("validate_#{v}"), [field, opts]} | validations]
+            [{String.to_atom("validate_#{validate}"), [field, opts]} | validations]
         end
       end)
   end
 
   # =======================================
 
+  @spec get_validated_changes!(Ecto.Changeset.t) :: map
   def get_validated_changes!(%Changeset{} = changeset) do
     unless changeset.valid? do
       raise Ecto.InvalidChangesetError, changeset: changeset

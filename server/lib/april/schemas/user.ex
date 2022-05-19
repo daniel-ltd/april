@@ -3,10 +3,18 @@ defmodule April.User do
   import Ecto.Changeset
 
   alias Argon2
+  alias April.{
+    Permission,
+    Group,
+    UserPermission,
+    UserGroup
+  }
 
   schema "users" do
     field :password, :string
     field :username, :string
+    many_to_many :permissions, Permission, join_through: UserPermission
+    many_to_many :groups, Group, join_through: UserGroup
 
     timestamps()
   end

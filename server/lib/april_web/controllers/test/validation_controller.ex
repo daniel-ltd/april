@@ -59,6 +59,7 @@ defmodule AprilWeb.ValidationController do
       }
     ]
   }
+  @api_permissions ["add_user", "change_user"]
   def validate(conn, params) do
     @api_param_types
     |> Validator.parse(params)

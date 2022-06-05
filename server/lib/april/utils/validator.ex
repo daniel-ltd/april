@@ -143,9 +143,9 @@ defmodule April.Validator do
   def parse(_types, params, _opts) when is_nil(params), do: %Changeset{valid?: true}
 
   def parse(%{} = types, params, opts) when is_map(params) do
-    {self_types, nested_types, delegate_types, validate_funcs, params} =
+    {delegate_types, self_types, nested_types, validate_funcs, params} =
       Enum.reduce(types, {%{}, %{}, %{}, [], params},
-        fn {field, type_validate}, {self_types, nested_types, delegate_types, validations, params} ->
+        fn {field, type_validate}, {delegate_types, self_types, nested_types, validations, params} ->
 
           type = Keyword.get(type_validate, :type)
           validations = _get_validations(field, type_validate, validations)
@@ -154,9 +154,9 @@ defmodule April.Validator do
             # validate a schema
             {:schema, _} ->
               {
+                delegate_types,
                 Map.put(self_types, field, :map),
                 Map.put(nested_types, field, type),
-                delegate_types,
                 validations,
                 params
               }
@@ -164,17 +164,17 @@ defmodule April.Validator do
             # validate a schema's field
             {:schema_field, _} ->
               {
+                Map.put(delegate_types, field, type),
                 self_types,
                 nested_types,
-                Map.put(delegate_types, field, type),
                 validations,
                 params
               }
             {:schema_field, _, _} ->
               {
+                Map.put(delegate_types, field, type),
                 self_types,
                 nested_types,
-                Map.put(delegate_types, field, type),
                 validations,
                 params
               }
@@ -182,9 +182,9 @@ defmodule April.Validator do
             # validate array of map
             {:array, %{} = _} ->
               {
+                delegate_types,
                 Map.put(self_types, field, {:array, :map}),
                 Map.put(nested_types, field, type),
-                delegate_types,
                 validations,
                 params
               }
@@ -192,9 +192,9 @@ defmodule April.Validator do
             # validate array of schema
             {:array_schema, _} ->
               {
+                delegate_types,
                 Map.put(self_types, field, {:array, :map}),
                 Map.put(nested_types, field, type),
-                delegate_types,
                 validations,
                 params
               }
@@ -202,9 +202,9 @@ defmodule April.Validator do
             # validate map with pairs of key and value
             {:map, %{} = _} ->
               {
+                delegate_types,
                 Map.put(self_types, field, :map),
                 Map.put(nested_types, field, type),
-                delegate_types,
                 validations,
                 params
               }
@@ -212,29 +212,47 @@ defmodule April.Validator do
             # validate map value only
             {:map_value, %{} = _} ->
               {
+                delegate_types,
                 Map.put(self_types, field, {:array, :map}),
                 Map.put(nested_types, field, type),
-                delegate_types,
                 validations,
-                Map.replace(params, Atom.to_string(field), Map.values(Map.get(params, Atom.to_string(field))))
+                Map.replace(
+                  params,
+                  Atom.to_string(field),
+                  Map.values(
+                    Map.get(
+                      params,
+                      Atom.to_string(field)
+                    )
+                  )
+                )
               }
 
             # validate map value is a schema
             {:map_schema, _} ->
               {
+                delegate_types,
                 Map.put(self_types, field, {:array, :map}),
                 Map.put(nested_types, field, type),
-                delegate_types,
                 validations,
-                Map.replace(params, Atom.to_string(field), Map.values(Map.get(params, Atom.to_string(field))))
+                Map.replace(
+                  params,
+                  Atom.to_string(field),
+                  Map.values(
+                    Map.get(
+                      params,
+                      Atom.to_string(field)
+                    )
+                  )
+                )
               }
 
             # validate ecto primitive types
             _ ->
               {
+                delegate_types,
                 Map.put(self_types, field, type),
                 nested_types,
-                delegate_types,
                 validations,
                 params
               }
@@ -248,7 +266,6 @@ defmodule April.Validator do
     |> then(fn cs -> _validate_parsed_type(validate_funcs, cs, opts) end)
   end
 
-  # validate nested type
   def parse(schema_or_types, params, opts) when is_list(params) do
     result =
       Enum.reduce(params, {[], []}, fn el, {success, failure} ->
@@ -287,22 +304,11 @@ defmodule April.Validator do
     )
   end
 
-  # def parse(types, params, _opts) when is_map(params) or is_list(params) do
-  #   raise(
-  #     Error,
-  #     code: Error.c_INTERNAL_SERVER_ERROR(),
-  #     message: "Not yet supported for parsing #{inspect(params)} of type #{inspect(types)}"
-  #   )
-  # end
-
   defp _parse_delegate_types(delegate_types, _) when map_size(delegate_types) == 0 do
     Changeset.change({%{}, %{}})
   end
 
   defp _convert_delegate_types(%{} = delegate_types) do
-    # %{param_name: [type: {:schema, schema, field}]}
-    # %{schema: [field: param_name]}
-    # [schema: [field: param_name,...], schema2: [...]]
     delegate_types
     |> Enum.group_by(
         fn {_field, types} -> elem(types, 1) end,
@@ -315,7 +321,6 @@ defmodule April.Validator do
         end
       )
     |> Enum.map(
-        # schema_fields = [field: param_name1, field: param_name2]
         fn {schema, schema_fields} ->
           _uniq_split_schema_fields(schema, schema_fields)
         end
@@ -337,7 +342,6 @@ defmodule April.Validator do
     )
     |> List.flatten()
     |> Enum.into(%{})
-    # |> IO.inspect()
   end
 
   defp _get_field_type!(schema, field) do
@@ -353,7 +357,6 @@ defmodule April.Validator do
     end
   end
 
-  # %{} = delegate_types
   defp _parse_delegate_types(%{} = delegate_types, %{} = params) do
     converted_types = _convert_delegate_types(delegate_types)
     delegate_data_types = _convert_delegate_types_to_data_types(converted_types)
@@ -391,14 +394,11 @@ defmodule April.Validator do
         %{cs | errors: errors ++ cs.errors, valid?: errors == [] and cs.valid?}
       end
     )
-    # |> IO.inspect()
   end
 
   defp _uniq_split_schema_fields(_schema, []), do: []
 
   defp _uniq_split_schema_fields(schema, schema_fields) do
-    # schema_fields = [field1: field1_param, field2: field2_param, field1: field2_param]
-    # => [[field1: field1_param, field2: field2_param], [field1: field2_param]]
     uniq = Enum.uniq_by(schema_fields, fn {field, _param_name} -> field end)
 
     [{schema, uniq} | _uniq_split_schema_fields(schema, schema_fields -- uniq)]
@@ -416,37 +416,29 @@ defmodule April.Validator do
   end
 
   defp _parse_nested_types(%{} = nested_types, %Changeset{} = changeset, opts) do
-    Enum.reduce(nested_types, changeset, fn {field, types}, cs ->
-      nested_cs =
-        case types do
-          # {:map_value, %{} = types} ->
-          #   parse(types, Map.values(Changeset.get_change(cs, field, %{})), opts)
-
-          # {:map_schema, schema} ->
-          #   parse(schema, Map.values(Changeset.get_change(cs, field, %{})), opts)
-
-          {_, types} ->
-            parse(types, Changeset.get_change(cs, field), opts)
-
-          _ ->
-            raise(
-              Error,
-              code: Error.c_INTERNAL_SERVER_ERROR(),
-              message: "Not yet supported for parsing type #{inspect(types)}"
-            )
-        end
+    Enum.reduce(nested_types, changeset, fn {field, {field_type, types}}, cs ->
+      nested_cs = parse(types, Changeset.get_change(cs, field), opts)
 
       case nested_cs do
         %{valid?: true} ->
           Changeset.update_change(cs, field, fn _ -> nested_cs.changes end)
 
         %{valid?: false, errors: errors} ->
-          errors = Enum.map(errors, fn {nested_field, error} ->{"#{field}.#{nested_field}", error} end)
+          errors = Enum.map(errors, fn {nested_field, error} -> {"#{_get_reason_field(field_type, field)}.#{nested_field}", error} end)
           %{cs | errors: errors ++ cs.errors, valid?: false}
 
         _ -> cs
       end
     end)
+  end
+
+  @array_types [:array, :array_schema, :map_value, :map_schema]
+  defp _get_reason_field(field_type, field) do
+    if Enum.member?(@array_types, field_type) do
+      "#{field}[]"
+    else
+      field
+    end
   end
 
   defp _validate_parsed_type(validate_funcs, %Changeset{} = changeset, opts) do

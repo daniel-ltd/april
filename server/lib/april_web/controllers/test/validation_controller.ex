@@ -59,30 +59,85 @@ defmodule AprilWeb.ValidationController do
       }
     ],
 
-    # user: [type: {:schema, April.User}, required: true],
+    user: [type: {:schema, April.User}, required: true],
     username: [type: {:schema_field, April.User}],
     password_raw: [type: {:schema_field, April.User, :password}],
 
-    # perm: [
-    #   type: {
-    #     :map,
-    #     %{
-    #       name: [type: {:schema_field, April.Permission}],
-    #       code: [type: {:schema_field, April.Permission, :codename}]
-    #     }
-    #   }
-    # ],
+    perm: [
+      type: {
+        :map,
+        %{
+          name: [type: {:schema_field, April.Permission}],
+          code: [type: {:schema_field, April.Permission, :codename}, required: true],
+          temp: [type: :boolean]
+        }
+      }
+    ],
     perm_name: [type: {:schema_field, April.Permission, :name}],
     perm_name2: [type: {:schema_field, April.Permission, :name}],
-    codename: [type: {:schema_field, April.Permission}, required: true]
+    codename: [type: {:schema_field, April.Permission}, required: true],
+
+    array_perm: [
+      type: {
+        :array,
+        %{
+          name: [type: {:schema_field, April.Permission}],
+          code: [type: {:schema_field, April.Permission, :codename}, required: true]
+        }
+      },
+      required: true
+    ],
+
+    info: [
+      type: {
+        :map,
+        %{
+          user: [
+            type: {
+              :map,
+              %{
+                name: [type: {:schema_field, April.User, :username}, required: true],
+              }
+            },
+            required: true
+          ],
+          perms: [
+            type: {
+              :array,
+              %{
+                name: [type: {:schema_field, April.Permission}],
+                code: [type: {:schema_field, April.Permission, :codename}, required: true]
+              },
+            },
+            required: true,
+            length: [min: 1]
+          ],
+          schema_perms: [
+            type: {
+              :array_schema,
+              April.Permission
+            },
+            required: true
+          ],
+          temp: [type: :boolean]
+        }
+      },
+      required: true
+    ],
+
+    map_group: [
+      type: {
+        :map_schema,
+        April.Group
+      },
+      required: true
+    ],
   }
   @api_permissions ["add_user", "change_user"]
   def validate(conn, params) do
     @api_param_types
     |> Validator.parse(params)
     |> Validator.get_validated_changes!()
-    # |> IO.inspect()
-
-    json(conn, "success")
+    |> then(fn params -> json(conn, params) end)
   end
 end

@@ -57,7 +57,24 @@ defmodule AprilWeb.ValidationController do
           class: [type: :integer, required: true]
         }
       }
-    ]
+    ],
+
+    # user: [type: {:schema, April.User}, required: true],
+    username: [type: {:schema_field, April.User}],
+    password_raw: [type: {:schema_field, April.User, :password}],
+
+    # perm: [
+    #   type: {
+    #     :map,
+    #     %{
+    #       name: [type: {:schema_field, April.Permission}],
+    #       code: [type: {:schema_field, April.Permission, :codename}]
+    #     }
+    #   }
+    # ],
+    perm_name: [type: {:schema_field, April.Permission, :name}],
+    perm_name2: [type: {:schema_field, April.Permission, :name}],
+    codename: [type: {:schema_field, April.Permission}, required: true]
   }
   @api_permissions ["add_user", "change_user"]
   def validate(conn, params) do

@@ -21,9 +21,8 @@ defmodule April.Validator do
 
   @type types :: %{atom() => type_validate()}
 
-  @default_changeset_data %{}
   @supported_validations [:acceptance, :change, :confirmation, :exclusion, :format, :inclusion, :length, :number, :required, :subset]
-  
+
   @doc """
   A wrapped function based on Ecto.Changeset customized for parse nested `types` to validate `params`
 
@@ -141,6 +140,86 @@ defmodule April.Validator do
   @spec parse(types, map | Enum.t, Keyword.t) :: Ecto.Changeset.t
   def parse(types, params, opts \\ [])
 
+  def parse(%{} = types, params, opts) when is_map(params) do
+    {self_types, nested_types, delegate_types, validate_funcs} =
+      Enum.reduce(types, {%{}, %{}, %{}, []},
+        fn {field, type_validate}, {self_types, nested_types, delegate_types, validations} ->
+
+          type = Keyword.get(type_validate, :type)
+          validations = _get_validations(field, type_validate, validations)
+
+          case type do
+            # validate array of map
+            {:array, %{} = _} ->
+              {
+                Map.put(self_types, field, {:array, :map}),
+                Map.put(nested_types, field, type),
+                delegate_types,
+                validations
+              }
+
+            # validate map with pairs of key and value
+            {:map, %{} = _} ->
+              {
+                Map.put(self_types, field, :map),
+                Map.put(nested_types, field, type),
+                delegate_types,
+                validations
+              }
+
+            # validate map value only
+            {:map_value, %{} = _} ->
+              {
+                Map.put(self_types, field, :map),
+                Map.put(nested_types, field, type),
+                delegate_types,
+                validations
+              }
+
+            # validate a schema
+            {:schema, _} ->
+              {
+                Map.put(self_types, field, :map),
+                Map.put(nested_types, field, type),
+                delegate_types,
+                validations
+              }
+
+            # validate a schema's field
+            {:schema_field, _} ->
+              {
+                self_types,
+                nested_types,
+                Map.put(delegate_types, field, type),
+                validations
+              }
+            {:schema_field, _, _} ->
+              {
+                self_types,
+                nested_types,
+                Map.put(delegate_types, field, type),
+                validations
+              }
+
+            # validate ecto primitive types
+            _ ->
+              {
+                Map.put(self_types, field, type),
+                nested_types,
+                delegate_types,
+                validations
+              }
+          end
+        end)
+
+    delegate_types
+    |> _parse_delegate_types(params)
+    |> then(fn cs -> _parse_self_types(self_types, params, cs, opts) end)
+    |> then(fn cs -> _parse_nested_types(nested_types, cs, opts) end)
+    |> then(fn cs -> _validate_parsed_type(validate_funcs, cs, opts) end)
+  end
+
+  # validate nested type
   def parse(%{} = types, params, opts) when is_list(params) do
     result =
       Enum.reduce(params, {[], []}, fn el, {success, failure} ->
@@ -167,63 +246,115 @@ defmodule April.Validator do
     end
   end
 
-  def parse(%{} = types, params, opts) when is_map(params) do
-    {self_types, nested_types, validate_func} =
-      Enum.reduce(types, {%{}, %{}, []},
-        fn {field, type_validate}, {self_types, nested_types, validations} ->
+  def parse(%{} = _types, params, _opts) when is_nil(params), do: %Changeset{valid?: true}
 
-          type = Keyword.get(type_validate, :type)
-          validations = _get_validations(field, type_validate, validations)
+  def parse(types, params, _opts) do
+    raise(
+      Error,
+      code: Error.c_INTERNAL_SERVER_ERROR(),
+      message: "Not yet supported for parsing #{inspect(params)} of type #{inspect(types)}"
+    )
+  end
 
-          case type do
-            # validate array of map
-            {:array, %{} = _} ->
-              {
-                Map.put(self_types, field, {:array, :map}),
-                Map.put(nested_types, field, type),
-                validations
-              }
+  defp _parse_delegate_types(delegate_types, _) when map_size(delegate_types) == 0 do
+    Changeset.change({%{}, %{}})
+  end
 
-            # validate map with pairs of key and value
-            {:map, %{} = _} ->
-              {
-                Map.put(self_types, field, :map),
-                Map.put(nested_types, field, type),
-                validations
-              }
+  # %{} = delegate_types
+  defp _parse_delegate_types(%{} = delegate_types, %{} = params) do
+    # %{schema: [field: param_name]}
+    delegate_types =
+      Enum.group_by(
+        delegate_types,
+        fn {_field, types} -> elem(types, 1) end,
+        fn
+          {param_key, {_, _}} ->
+            {param_key, param_key}
 
-            # validate map value only
-            {:map_value, %{} = _} ->
-              {
-                Map.put(self_types, field, :map),
-                Map.put(nested_types, field, type),
-                validations
-              }
-
-            # validate ecto primitive types
-            _ ->
-              {
-                Map.put(self_types, field, type),
-                nested_types,
-                validations
-              }
-          end
-        end)
-
-    changeset =
-      Enum.reduce(
-        validate_func,
-        Changeset.cast({@default_changeset_data, self_types}, params, Map.keys(self_types), opts),
-        fn {func, opts}, cs ->
-          apply(Changeset, func, [cs | opts])
+          {param_key, {_, _, field}} ->
+            {field, param_key}
         end
       )
 
+    # genarate changeset types for delegate types
+    delegete_data_types =
+      Enum.reduce(
+        delegate_types,
+        %{},
+        fn {schema, schema_fields}, data_types ->
+          Map.merge(
+            data_types,
+            Enum.map(
+              schema_fields,
+              fn {field, param_key} ->
+                field_type = apply(schema, :__schema__, [:type, field])
+                {param_key, field_type}
+              end
+            )
+            |> Enum.into(%{})
+          )
+        end
+      )
+
+    Enum.reduce(
+      delegate_types,
+      Changeset.change({%{}, delegete_data_types}),
+      fn {schema, fields}, cs ->
+
+        params =
+          Enum.into(fields, %{}, fn {field, param_key} ->
+            {field, Map.get(params, Atom.to_string(param_key))}
+          end)
+
+        %{changes: changes, errors: errors} = apply(schema, :changeset, [struct(schema), params])
+
+        cs =
+          changes
+          |> Map.new(fn {field, change_data} -> {Keyword.get(fields, field), change_data} end)
+          |> then(fn changes -> Changeset.change(cs, changes) end)
+
+        errors =
+          Enum.reject(
+            errors,
+            fn
+              {_field, {_mgs, [validation: :required]}} -> true
+
+              _ -> false
+            end
+          )
+
+        %{cs | errors: errors ++ cs.errors, valid?: errors == [] and cs.valid?}
+      end
+    )
+    |> IO.inspect()
+  end
+
+  defp _parse_self_types(%{} = self_types, params, %Changeset{} = changeset, opts) do
+    {%{}, self_types}
+    |> Changeset.cast(params, Map.keys(self_types), opts)
+    # |> IO.inspect(label: "self cs")
+    |> then(fn cs -> _merge_changeset(changeset, cs) end)
+    # |> IO.inspect(label: "merged")
+  end
+
+  defp _merge_changeset(%Changeset{types: cs1_types} = cs1, %Changeset{types: cs2_types} = cs2) do
+    new_types = Map.merge(cs1_types, cs2_types)
+    Changeset.merge(%{cs1 | types: new_types}, %{cs2 | types: new_types})
+  end
+
+  defp _parse_nested_types(%{} = nested_types, %Changeset{} = changeset, opts) do
     Enum.reduce(nested_types, changeset, fn {field, types}, cs ->
       nested_cs =
         case types do
           {:map_value, %{} = types} ->
             parse(types, Map.values(Changeset.get_change(cs, field, %{})), opts)
+
+          {:schema, schema} ->
+            with attrs when not is_nil(attrs) <- Changeset.get_change(cs, field) do
+              apply(schema, :changeset, [struct(schema), attrs])
+            else
+              _ -> nil
+            end
 
           {_, types} ->
             parse(types, Changeset.get_change(cs, field), opts)
@@ -236,25 +367,29 @@ defmodule April.Validator do
             )
         end
 
-      if nested_cs.valid? do
-        Changeset.update_change(cs, field, fn _ -> nested_cs.changes end)
-      else
-        %{cs | errors: nested_cs.errors ++ cs.errors, valid?: false}
+      case nested_cs do
+        %{valid?: true} ->
+          Changeset.update_change(cs, field, fn _ -> nested_cs.changes end)
+
+        %{valid?: false} ->
+          %{cs | errors: nested_cs.errors ++ cs.errors, valid?: false}
+
+        _ -> cs
       end
     end)
   end
 
-  def parse(%{} = _types, params, _opts) when is_nil(params), do: %Changeset{valid?: true}
-
-  def parse(types, params, _opts) do
-    raise(
-      Error,
-      code: Error.c_INTERNAL_SERVER_ERROR(),
-      message: "Not yet supported for parsing #{inspect(params)} of type #{inspect(types)}"
+  defp _validate_parsed_type(validate_funcs, %Changeset{} = changeset, opts) do
+    Enum.reduce(
+      validate_funcs,
+      changeset,
+      fn {func, opts}, cs ->
+        apply(Changeset, func, [cs | opts])
+      end
     )
   end
 
-  @spec _get_validations(atom, type_validate, Enum.t) :: Ecto.Changeset.t 
+  @spec _get_validations(atom, type_validate, Enum.t) :: Ecto.Changeset.t
   defp _get_validations(field, type_validate, validations) do
     type_validate
     |> Keyword.take(@supported_validations)

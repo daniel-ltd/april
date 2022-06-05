@@ -1,6 +1,4 @@
 defmodule April.AuthErrorHandler do
-  import Plug.Conn
-
   alias April.Error
 
   @behaviour Guardian.Plug.ErrorHandler

@@ -2,26 +2,50 @@ defmodule April.Validator do
   alias Ecto.Changeset
 
   alias April.{
-    Error,
+    Error
   }
 
   @type type_validate :: [
-    type: atom() | {:array, atom()} | {:array, map()},
-    acceptance: [],
-    change: (atom(), term() -> [{atom(), String.t()} | {atom(), {String.t(), Keyword.t()}}]),
-    confirmation: [] | [{:required, boolean()}],
-    exclusion: Enum.t(),
-    format: Regex.t(),
-    inclusion: Enum.t(),
-    length: [{:is, :number}, {:min, :number}, {:max, :number}, {:count, :graphemes | :codepoints}],
-    number: [{:less_than, :number}, {:greater_than, :number}, {:less_than_or_equal_to, :number}, {:greater_than_or_equal_to, :number}, {:equal_to, :number}, {:not_equal_to, :number}],
-    required: boolean(),
-    subset: Enum.t()
-  ]
+          type: atom() | {:array, atom()} | {:array, map()},
+          acceptance: [],
+          change:
+            (atom(), term() -> [{atom(), String.t()} | {atom(), {String.t(), Keyword.t()}}]),
+          confirmation: [] | [{:required, boolean()}],
+          exclusion: Enum.t(),
+          format: Regex.t(),
+          inclusion: Enum.t(),
+          length: [
+            {:is, :number},
+            {:min, :number},
+            {:max, :number},
+            {:count, :graphemes | :codepoints}
+          ],
+          number: [
+            {:less_than, :number},
+            {:greater_than, :number},
+            {:less_than_or_equal_to, :number},
+            {:greater_than_or_equal_to, :number},
+            {:equal_to, :number},
+            {:not_equal_to, :number}
+          ],
+          required: boolean(),
+          subset: Enum.t()
+        ]
 
   @type types :: %{atom() => type_validate()}
 
-  @supported_validations [:acceptance, :change, :confirmation, :exclusion, :format, :inclusion, :length, :number, :required, :subset]
+  @supported_validations [
+    :acceptance,
+    :change,
+    :confirmation,
+    :exclusion,
+    :format,
+    :inclusion,
+    :length,
+    :number,
+    :required,
+    :subset
+  ]
 
   @doc """
   A wrapped function based on Ecto.Changeset customized for parse nested `types` to validate `params`
@@ -137,16 +161,18 @@ defmodule April.Validator do
     |> parse(params)
     |> get_validated_changes!()
   """
-  @spec parse(types, map | Enum.t, Keyword.t) :: Ecto.Changeset.t
+  @spec parse(types, map | Enum.t(), Keyword.t()) :: Ecto.Changeset.t()
   def parse(types, params, opts \\ [])
 
-  def parse(_types, params, _opts) when is_nil(params), do: %Changeset{valid?: true}
+  def parse(_types, nil, _opts), do: %Changeset{valid?: false}
+  def parse(_types, [], _opts), do: %Changeset{valid?: true, changes: []}
 
   def parse(%{} = types, params, opts) when is_map(params) do
-    {delegate_types, self_types, nested_types, validate_funcs, params} =
-      Enum.reduce(types, {%{}, %{}, %{}, [], params},
-        fn {field, type_validate}, {delegate_types, self_types, nested_types, validations, params} ->
-
+    {delegate_types, self_types, nested_types, validate_funcs} =
+      Enum.reduce(
+        types,
+        {%{}, %{}, %{}, []},
+        fn {field, type_validate}, {delegate_types, self_types, nested_types, validations} ->
           type = Keyword.get(type_validate, :type)
           validations = _get_validations(field, type_validate, validations)
 
@@ -157,8 +183,7 @@ defmodule April.Validator do
                 delegate_types,
                 Map.put(self_types, field, :map),
                 Map.put(nested_types, field, type),
-                validations,
-                params
+                validations
               }
 
             # validate a schema's field
@@ -167,16 +192,15 @@ defmodule April.Validator do
                 Map.put(delegate_types, field, type),
                 self_types,
                 nested_types,
-                validations,
-                params
+                validations
               }
+
             {:schema_field, _, _} ->
               {
                 Map.put(delegate_types, field, type),
                 self_types,
                 nested_types,
-                validations,
-                params
+                validations
               }
 
             # validate array of map
@@ -185,8 +209,7 @@ defmodule April.Validator do
                 delegate_types,
                 Map.put(self_types, field, {:array, :map}),
                 Map.put(nested_types, field, type),
-                validations,
-                params
+                validations
               }
 
             # validate array of schema
@@ -195,8 +218,7 @@ defmodule April.Validator do
                 delegate_types,
                 Map.put(self_types, field, {:array, :map}),
                 Map.put(nested_types, field, type),
-                validations,
-                params
+                validations
               }
 
             # validate map with pairs of key and value
@@ -205,46 +227,25 @@ defmodule April.Validator do
                 delegate_types,
                 Map.put(self_types, field, :map),
                 Map.put(nested_types, field, type),
-                validations,
-                params
+                validations
               }
 
             # validate map value only
             {:map_value, %{} = _} ->
               {
                 delegate_types,
-                Map.put(self_types, field, {:array, :map}),
+                Map.put(self_types, field, :map),
                 Map.put(nested_types, field, type),
-                validations,
-                Map.replace(
-                  params,
-                  Atom.to_string(field),
-                  Map.values(
-                    Map.get(
-                      params,
-                      Atom.to_string(field)
-                    )
-                  )
-                )
+                validations
               }
 
             # validate map value is a schema
             {:map_schema, _} ->
               {
                 delegate_types,
-                Map.put(self_types, field, {:array, :map}),
+                Map.put(self_types, field, :map),
                 Map.put(nested_types, field, type),
-                validations,
-                Map.replace(
-                  params,
-                  Atom.to_string(field),
-                  Map.values(
-                    Map.get(
-                      params,
-                      Atom.to_string(field)
-                    )
-                  )
-                )
+                validations
               }
 
             # validate ecto primitive types
@@ -253,11 +254,11 @@ defmodule April.Validator do
                 delegate_types,
                 Map.put(self_types, field, type),
                 nested_types,
-                validations,
-                params
+                validations
               }
           end
-        end)
+        end
+      )
 
     delegate_types
     |> _parse_delegate_types(params)
@@ -270,6 +271,7 @@ defmodule April.Validator do
     result =
       Enum.reduce(params, {[], []}, fn el, {success, failure} ->
         nested_cs = parse(schema_or_types, el, opts)
+
         if nested_cs.valid? do
           {[nested_cs.changes | success], failure}
         else
@@ -278,14 +280,15 @@ defmodule April.Validator do
       end)
 
     case result do
-      {_, [_|_] = failure} ->
+      {_, [_ | _] = failure} ->
         failure
         |> Enum.uniq_by(fn {k, {_mgs, opts}} -> {k, Keyword.get(opts, :validation)} end)
-        |> Enum.reduce(%Changeset{},
-            fn {k, {mgs, opts}}, changeset ->
-              Changeset.add_error(changeset, k, mgs, opts)
-            end
-          )
+        |> Enum.reduce(
+          %Changeset{},
+          fn {k, {mgs, opts}}, changeset ->
+            Changeset.add_error(changeset, k, mgs, opts)
+          end
+        )
 
       {success, _} ->
         %Changeset{changes: success, valid?: true}
@@ -296,7 +299,7 @@ defmodule April.Validator do
     apply(schema, :changeset, [struct(schema), params])
   end
 
-  def parse(types, params, _opts) when is_map(params) or is_list(params) do
+  def parse(types, params, _opts) do
     raise(
       Error,
       code: Error.c_INTERNAL_SERVER_ERROR(),
@@ -311,20 +314,18 @@ defmodule April.Validator do
   defp _convert_delegate_types(%{} = delegate_types) do
     delegate_types
     |> Enum.group_by(
-        fn {_field, types} -> elem(types, 1) end,
-        fn
-          {param_name, {_, _}} ->
-            {param_name, param_name}
+      fn {_field, types} -> elem(types, 1) end,
+      fn
+        {param_name, {_, _}} ->
+          {param_name, param_name}
 
-          {param_name, {_, _, field}} ->
-            {field, param_name}
-        end
-      )
-    |> Enum.map(
-        fn {schema, schema_fields} ->
-          _uniq_split_schema_fields(schema, schema_fields)
-        end
-      )
+        {param_name, {_, _, field}} ->
+          {field, param_name}
+      end
+    )
+    |> Enum.map(fn {schema, schema_fields} ->
+      _uniq_split_schema_fields(schema, schema_fields)
+    end)
     |> List.flatten()
   end
 
@@ -353,7 +354,8 @@ defmodule April.Validator do
           message: "Can not get data type of field #{schema}.#{field}"
         )
 
-      field_type -> field_type
+      field_type ->
+        field_type
     end
   end
 
@@ -365,7 +367,6 @@ defmodule April.Validator do
       converted_types,
       Changeset.change({%{}, delegate_data_types}),
       fn {schema, fields}, cs ->
-
         params =
           Enum.into(fields, %{}, fn {field, param_name} ->
             {field, Map.get(params, Atom.to_string(param_name))}
@@ -417,29 +418,43 @@ defmodule April.Validator do
 
   defp _parse_nested_types(%{} = nested_types, %Changeset{} = changeset, opts) do
     Enum.reduce(nested_types, changeset, fn {field, {field_type, types}}, cs ->
-      nested_cs = parse(types, Changeset.get_change(cs, field), opts)
+      changes =
+        changeset
+        |> Changeset.get_change(field)
+        |> _convert_changes_by_field_type(field_type)
+
+      nested_cs = parse(types, changes, opts)
 
       case nested_cs do
         %{valid?: true} ->
           Changeset.update_change(cs, field, fn _ -> nested_cs.changes end)
 
         %{valid?: false, errors: errors} ->
-          errors = Enum.map(errors, fn {nested_field, error} -> {"#{_get_reason_field(field_type, field)}.#{nested_field}", error} end)
+          errors =
+            Enum.map(errors, fn {nested_field, error} ->
+              {"#{_get_reason_field(field_type, field)}.#{nested_field}", error}
+            end)
+
           %{cs | errors: errors ++ cs.errors, valid?: false}
 
-        _ -> cs
+        _ ->
+          cs
       end
     end)
   end
 
+  defp _convert_changes_by_field_type(nil, _field_type), do: nil
+
+  defp _convert_changes_by_field_type(%{} = changes, field_type)
+       when field_type in [:map_value, :map_schema],
+       do: Map.values(changes)
+
+  defp _convert_changes_by_field_type(changes, _field_type), do: changes
+
   @array_types [:array, :array_schema, :map_value, :map_schema]
-  defp _get_reason_field(field_type, field) do
-    if Enum.member?(@array_types, field_type) do
-      "#{field}[]"
-    else
-      field
-    end
-  end
+  defp _get_reason_field(field_type, field) when field_type in @array_types, do: "#{field}[]"
+
+  defp _get_reason_field(_, field), do: field
 
   defp _validate_parsed_type(validate_funcs, %Changeset{} = changeset, opts) do
     Enum.reduce(
@@ -451,27 +466,29 @@ defmodule April.Validator do
     )
   end
 
-  @spec _get_validations(atom, type_validate, Enum.t) :: Ecto.Changeset.t
+  @spec _get_validations(atom, type_validate, Enum.t()) :: Ecto.Changeset.t()
   defp _get_validations(field, type_validate, validations) do
     type_validate
     |> Keyword.take(@supported_validations)
     |> Enum.reduce(validations, fn {validate, opts}, validations ->
-        case {validate, opts} do
-          {:required, false} ->
-            validations
+      case {validate, opts} do
+        {:required, false} ->
+          validations
 
-          {:required, true} ->
-            Keyword.update(validations, :validate_required, [[field]], fn [arr] -> [[field | arr]] end)
+        {:required, true} ->
+          Keyword.update(validations, :validate_required, [[field]], fn [arr] ->
+            [[field | arr]]
+          end)
 
-          _ ->
-            [{String.to_atom("validate_#{validate}"), [field, opts]} | validations]
-        end
-      end)
+        _ ->
+          [{String.to_atom("validate_#{validate}"), [field, opts]} | validations]
+      end
+    end)
   end
 
   # =======================================
 
-  @spec get_validated_changes!(Ecto.Changeset.t) :: map
+  @spec get_validated_changes!(Ecto.Changeset.t()) :: map
   def get_validated_changes!(%Changeset{} = changeset) do
     unless changeset.valid? do
       raise Ecto.InvalidChangesetError, changeset: changeset

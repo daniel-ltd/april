@@ -56,7 +56,8 @@ defmodule AprilWeb.ValidationController do
           id: [type: :string, required: true],
           class: [type: :integer, required: true]
         }
-      }
+      },
+      length: [min: 3]
     ],
 
     user: [type: {:schema, April.User}, required: true],

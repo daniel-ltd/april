@@ -133,9 +133,50 @@ defmodule AprilWeb.ValidationController do
       },
       required: true
     ],
+
+    # joined_name: [type: :joined_string],
+    # joined_name: [type: {:joined_string, :integer | ValidateType | {:schema_field, Schema, :field}}],
+
+    # joined_id: [
+    #   type: :joined_string,
+    #   split: [pattern: [], parts: :infinity, trim: true],
+    #   elem_validate: [
+    #     length: [min: 10],
+    #     number: [greater_than: 3, less_than: 5]
+    #   ]
+    # ]
   }
   @api_permissions ["add_user", "change_user"]
   def validate(conn, params) do
+    @api_param_types
+    |> Validator.parse(params)
+    |> Validator.get_validated_changes!()
+    |> then(fn params -> json(conn, params) end)
+  end
+
+  @api_param_types %{
+    array_string: [
+      type: {:array, :string},
+      required: true
+    ],
+    array_integer: [
+      type: {:array, :integer},
+      length: [min: 1, max: 3],
+      required: true
+    ],
+    array_temp: [
+      type: {:array_field, April.Room, :temp},
+      length: [min: 1, max: 3],
+      required: true
+    ],
+    array_color: [
+      type: {:array_field, April.Room, :color},
+      elem_validate: [
+        length: [min: 4]
+      ],
+    ],
+  }
+  def validate_array(conn, params) do
     @api_param_types
     |> Validator.parse(params)
     |> Validator.get_validated_changes!()

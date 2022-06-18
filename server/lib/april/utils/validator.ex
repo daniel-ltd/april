@@ -164,7 +164,8 @@ defmodule April.Validator do
   @spec parse(types, map | Enum.t(), Keyword.t()) :: Ecto.Changeset.t()
   def parse(types, params, opts \\ [])
 
-  def parse(_types, nil, _opts), do: %Changeset{valid?: false}
+  def parse(_types, nil, _opts), do: nil
+  # convert :map_value, :map_schema default type %{} to []
   def parse(_types, [], _opts), do: %Changeset{valid?: true, changes: []}
 
   def parse(%{} = types, params, opts) when is_map(params) do
@@ -221,6 +222,25 @@ defmodule April.Validator do
                 validations
               }
 
+            # validate array of schema field
+            {:array_field, schema, schema_field} ->
+              type = {
+                :array_field,
+                %{
+                  elem: [
+                    {:type, {:schema_field, schema, schema_field}}
+                    | Keyword.get(type_validate, :elem_validate, [])
+                  ]
+                }
+              }
+
+              {
+                delegate_types,
+                Map.put(self_types, field, {:array, _get_field_type!(schema, schema_field)}),
+                Map.put(nested_types, field, type),
+                validations
+              }
+
             # validate map with pairs of key and value
             {:map, %{} = _} ->
               {
@@ -270,19 +290,24 @@ defmodule April.Validator do
   def parse(schema_or_types, params, opts) when is_list(params) do
     result =
       Enum.reduce(params, {[], []}, fn el, {success, failure} ->
-        nested_cs = parse(schema_or_types, el, opts)
+        case parse(schema_or_types, el, opts) do
+          %Changeset{valid?: true, changes: changes} ->
+            {success ++ [changes], failure}
 
-        if nested_cs.valid? do
-          {[nested_cs.changes | success], failure}
-        else
-          {success, failure ++ nested_cs.errors}
+          %Changeset{valid?: false, errors: errors} ->
+            {success, failure ++ errors}
+
+          _ ->
+            {success, failure}
         end
       end)
 
     case result do
       {_, [_ | _] = failure} ->
         failure
-        |> Enum.uniq_by(fn {k, {_mgs, opts}} -> {k, Keyword.get(opts, :validation)} end)
+        |> Enum.uniq_by(fn {k, {_mgs, opts}} ->
+          {k, Keyword.get(opts, :validation), Keyword.get(opts, :kind)}
+        end)
         |> Enum.reduce(
           %Changeset{},
           fn {k, {mgs, opts}}, changeset ->
@@ -295,7 +320,7 @@ defmodule April.Validator do
     end
   end
 
-  def parse(schema, params, _opts) when is_atom(schema) and is_map(params) do
+  def parse(schema, %{} = params, _opts) when is_atom(schema) do
     apply(schema, :changeset, [struct(schema), params])
   end
 
@@ -309,6 +334,44 @@ defmodule April.Validator do
 
   defp _parse_delegate_types(delegate_types, _) when map_size(delegate_types) == 0 do
     Changeset.change({%{}, %{}})
+  end
+
+  defp _parse_delegate_types(%{} = delegate_types, %{} = params) do
+    converted_types = _convert_delegate_types(delegate_types)
+    delegate_data_types = _convert_delegate_types_to_data_types(converted_types)
+
+    Enum.reduce(
+      converted_types,
+      Changeset.change({%{}, delegate_data_types}),
+      fn {schema, fields}, cs ->
+        params =
+          Enum.into(fields, %{}, fn {field, param_name} ->
+            {field, Map.get(params, Atom.to_string(param_name))}
+          end)
+
+        %{changes: changes, errors: errors} = apply(schema, :changeset, [struct(schema), params])
+
+        cs =
+          changes
+          |> Map.new(fn {field, change_data} -> {Keyword.get(fields, field), change_data} end)
+          |> then(fn changes -> Changeset.change(cs, changes) end)
+
+        errors =
+          Enum.reduce(
+            errors,
+            [],
+            fn
+              {_field, {_mgs, [validation: :required]}}, acc ->
+                acc
+
+              {field, err}, acc ->
+                [{Keyword.get(fields, field), err} | acc]
+            end
+          )
+
+        %{cs | errors: errors ++ cs.errors, valid?: errors == [] and cs.valid?}
+      end
+    )
   end
 
   defp _convert_delegate_types(%{} = delegate_types) do
@@ -359,44 +422,6 @@ defmodule April.Validator do
     end
   end
 
-  defp _parse_delegate_types(%{} = delegate_types, %{} = params) do
-    converted_types = _convert_delegate_types(delegate_types)
-    delegate_data_types = _convert_delegate_types_to_data_types(converted_types)
-
-    Enum.reduce(
-      converted_types,
-      Changeset.change({%{}, delegate_data_types}),
-      fn {schema, fields}, cs ->
-        params =
-          Enum.into(fields, %{}, fn {field, param_name} ->
-            {field, Map.get(params, Atom.to_string(param_name))}
-          end)
-
-        %{changes: changes, errors: errors} = apply(schema, :changeset, [struct(schema), params])
-
-        cs =
-          changes
-          |> Map.new(fn {field, change_data} -> {Keyword.get(fields, field), change_data} end)
-          |> then(fn changes -> Changeset.change(cs, changes) end)
-
-        errors =
-          Enum.reduce(
-            errors,
-            [],
-            fn
-              {_field, {_mgs, [validation: :required]}}, acc ->
-                acc
-
-              {field, err}, acc ->
-                [{Keyword.get(fields, field), err} | acc]
-            end
-          )
-
-        %{cs | errors: errors ++ cs.errors, valid?: errors == [] and cs.valid?}
-      end
-    )
-  end
-
   defp _uniq_split_schema_fields(_schema, []), do: []
 
   defp _uniq_split_schema_fields(schema, schema_fields) do
@@ -417,33 +442,67 @@ defmodule April.Validator do
   end
 
   defp _parse_nested_types(%{} = nested_types, %Changeset{} = changeset, opts) do
-    Enum.reduce(nested_types, changeset, fn {field, {field_type, types}}, cs ->
-      changes =
-        changeset
-        |> Changeset.get_change(field)
-        |> _convert_changes_by_field_type(field_type)
+    Enum.reduce(nested_types, changeset, fn
+      {field, {:array_field = field_type, types}}, cs ->
+        changes =
+          changeset
+          |> Changeset.get_change(field)
+          |> _convert_changes_by_field_type(field_type)
 
-      nested_cs = parse(types, changes, opts)
-
-      case nested_cs do
-        %{valid?: true} ->
-          Changeset.update_change(cs, field, fn _ -> nested_cs.changes end)
-
-        %{valid?: false, errors: errors} ->
-          errors =
-            Enum.map(errors, fn {nested_field, error} ->
-              {"#{_get_reason_field(field_type, field)}.#{nested_field}", error}
+        case parse(types, changes, opts) do
+          %Changeset{valid?: true, changes: changes} ->
+            Changeset.update_change(cs, field, fn _ ->
+              Enum.map(changes, &Map.get(&1, :elem))
             end)
 
-          %{cs | errors: errors ++ cs.errors, valid?: false}
+          %Changeset{valid?: false, errors: errors} ->
+            errors =
+              Enum.reduce(
+                errors,
+                [],
+                fn
+                  {_field, {_mgs, [validation: :required]}}, acc ->
+                    acc
 
-        _ ->
-          cs
-      end
+                  {_field, err}, acc ->
+                    [{_get_reason_field(field_type, field), err} | acc]
+                end
+              )
+
+            %{cs | errors: errors ++ cs.errors, valid?: errors == [] and cs.valid?}
+
+          _ ->
+            cs
+        end
+
+      {field, {field_type, types}}, cs ->
+        changes =
+          changeset
+          |> Changeset.get_change(field)
+          |> _convert_changes_by_field_type(field_type)
+
+        case parse(types, changes, opts) do
+          %Changeset{valid?: true, changes: changes} ->
+            Changeset.update_change(cs, field, fn _ -> changes end)
+
+          %Changeset{valid?: false, errors: errors} ->
+            errors =
+              Enum.map(errors, fn {nested_field, error} ->
+                {"#{_get_reason_field(field_type, field)}.#{nested_field}", error}
+              end)
+
+            %{cs | errors: errors ++ cs.errors, valid?: false}
+
+          _ ->
+            cs
+        end
     end)
   end
 
   defp _convert_changes_by_field_type(nil, _field_type), do: nil
+
+  defp _convert_changes_by_field_type([_ | _] = changes, :array_field),
+    do: Enum.map(changes, &%{"elem" => &1})
 
   defp _convert_changes_by_field_type(%{} = changes, field_type)
        when field_type in [:map_value, :map_schema],
@@ -451,7 +510,7 @@ defmodule April.Validator do
 
   defp _convert_changes_by_field_type(changes, _field_type), do: changes
 
-  @array_types [:array, :array_schema, :map_value, :map_schema]
+  @array_types [:array, :array_schema, :array_field, :map_value, :map_schema]
   defp _get_reason_field(field_type, field) when field_type in @array_types, do: "#{field}[]"
 
   defp _get_reason_field(_, field), do: field

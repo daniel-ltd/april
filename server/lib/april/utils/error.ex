@@ -1,9 +1,9 @@
 defmodule April.Error do
-  @derive {Jason.Encoder, only: [:code, :reason]}
+  @derive {Jason.Encoder, only: [:code, :reason, :message]}
   defexception [:code, :reason, :message]
 
-  @type error_code :: String.t
-  @type t :: %__MODULE__{code: error_code, reason: String.t, message: String.t}
+  @type error_code :: String.t()
+  @type t :: %__MODULE__{code: error_code, reason: String.t(), message: String.t()}
 
   def c_NOT_FOUND, do: "not_found"
   def c_REQUIRED_FIELD, do: "required"
@@ -18,7 +18,7 @@ defmodule April.Error do
   def c_VALIDATE_CONFIRMATION, do: "validate_confirmation"
   def c_NO_ASSOC_CONSTRAINT, do: "no_assoc_contraint"
   def c_VALIDATE_LENGTH, do: "validate_length"
-  def c_VALIDATE_NUMBER,  do: "validate_number"
+  def c_VALIDATE_NUMBER, do: "validate_number"
   def c_AT_LEAST_ITEM, do: "at_least_item"
   def c_AT_LEAST_CHARACTER, do: "at_least_character"
   def c_AT_MOST_CHARACTER, do: "at_most_character"
@@ -46,15 +46,16 @@ defmodule April.Error do
 
   @impl true
   def exception(opts) do
-    code  = Keyword.get(opts, :code, c_INTERNAL_SERVER_ERROR())
+    code = Keyword.get(opts, :code, c_INTERNAL_SERVER_ERROR())
     reason = Keyword.get(opts, :reason)
     msg = Keyword.get(opts, :message)
     %__MODULE__{code: code, reason: reason, message: msg}
   end
 
-  @spec transform(t | Exception.t) :: {atom, t}
+  @spec transform(t | Exception.t()) :: {atom, t}
   def transform(%__MODULE__{code: code} = reason) do
     err_500 = c_INTERNAL_SERVER_ERROR()
+
     case code do
       ^err_500 -> {:internal_server_error, reason}
       :unauthenticated -> {:unauthorized, reason}
@@ -90,14 +91,23 @@ defmodule April.Error do
     end
   end
 
-  @spec _transform_changeset_errors(Ecto.Changeset.t) :: [t]
+  @spec _transform_changeset_errors(Ecto.Changeset.t()) :: [t]
   defp _transform_changeset_errors(%Ecto.Changeset{} = changeset) do
     changeset.errors
     |> Enum.reverse()
-    |> Enum.map(fn {k, {_, opts}} -> %__MODULE__{code: _get_changset_error_code(opts), reason: k} end)
+    |> Enum.map(fn {k, {msg, opts}} ->
+      %__MODULE__{
+        code: _get_changset_error_code(opts),
+        reason: k,
+        message:
+          Regex.replace(~r"%{(\w+)}", msg, fn _, key ->
+            opts |> Keyword.get(String.to_existing_atom(key), key) |> to_string()
+          end)
+      }
+    end)
   end
 
-  @spec _get_changset_error_code(Enum.t) :: error_code
+  @spec _get_changset_error_code(Enum.t()) :: error_code
   defp _get_changset_error_code(opts) do
     validation = Keyword.get(opts, :validation)
     kind = Keyword.get(opts, :kind)
@@ -173,7 +183,7 @@ defmodule April.Error do
 
       {_, :not_equal_to, _} ->
         c_NOT_EQUAL()
-        
+
       _ ->
         c_UNKNOWN_ERROR()
     end
@@ -184,6 +194,7 @@ defmodule April.Error do
     case code do
       1452 ->
         c_FOREIGN_KEY_WRONG()
+
       _ ->
         c_INTERNAL_SERVER_ERROR()
     end

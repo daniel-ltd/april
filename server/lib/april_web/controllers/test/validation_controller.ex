@@ -51,7 +51,7 @@ defmodule AprilWeb.ValidationController do
 
     array_map: [
       type: {
-        :array,
+        :array_map,
         %{
           id: [type: :string, required: true],
           class: [type: :integer, required: true]
@@ -80,7 +80,7 @@ defmodule AprilWeb.ValidationController do
 
     array_perm: [
       type: {
-        :array,
+        :array_map,
         %{
           name: [type: {:schema_field, April.Permission}],
           code: [type: {:schema_field, April.Permission, :codename}, required: true]
@@ -104,7 +104,7 @@ defmodule AprilWeb.ValidationController do
           ],
           perms: [
             type: {
-              :array,
+              :array_map,
               %{
                 name: [type: {:schema_field, April.Permission}],
                 code: [type: {:schema_field, April.Permission, :codename}, required: true]
@@ -157,6 +157,9 @@ defmodule AprilWeb.ValidationController do
   @api_param_types %{
     array_string: [
       type: {:array, :string},
+      elem_validate: [
+        length: [is: 3]
+      ],
       required: true
     ],
     array_integer: [
@@ -173,7 +176,7 @@ defmodule AprilWeb.ValidationController do
       type: {:array_field, April.Room, :color},
       elem_validate: [
         length: [min: 4]
-      ],
+      ]
     ],
   }
   def validate_array(conn, params) do

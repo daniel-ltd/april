@@ -204,8 +204,38 @@ defmodule April.Validator do
                 validations
               }
 
+            # validate array of type
+            {:array, elem_type} ->
+              elem_validate = Keyword.get(type_validate, :elem_validate)
+
+              if is_nil(elem_validate) or elem_validate == [] do
+                {
+                  delegate_types,
+                  Map.put(self_types, field, {:array, elem_type}),
+                  nested_types,
+                  validations
+                }
+              else
+                type = {
+                  :array_field,
+                  %{
+                    elem: [
+                      {:type, elem_type}
+                      | Keyword.get(type_validate, :elem_validate, [])
+                    ]
+                  }
+                }
+
+                {
+                  delegate_types,
+                  Map.put(self_types, field, {:array, elem_type}),
+                  Map.put(nested_types, field, type),
+                  validations
+                }
+              end
+
             # validate array of map
-            {:array, %{} = _} ->
+            {:array_map, %{} = _} ->
               {
                 delegate_types,
                 Map.put(self_types, field, {:array, :map}),
@@ -284,7 +314,7 @@ defmodule April.Validator do
     |> _parse_delegate_types(params)
     |> then(fn cs -> _parse_self_types(self_types, params, cs, opts) end)
     |> then(fn cs -> _parse_nested_types(nested_types, cs, opts) end)
-    |> then(fn cs -> _validate_parsed_type(validate_funcs, cs, opts) end)
+    |> then(fn cs -> _validate_parsed_type(validate_funcs, cs) end)
   end
 
   def parse(schema_or_types, params, opts) when is_list(params) do
@@ -510,12 +540,12 @@ defmodule April.Validator do
 
   defp _convert_changes_by_field_type(changes, _field_type), do: changes
 
-  @array_types [:array, :array_schema, :array_field, :map_value, :map_schema]
+  @array_types [:array, :array_map, :array_schema, :array_field, :map_value, :map_schema]
   defp _get_reason_field(field_type, field) when field_type in @array_types, do: "#{field}[]"
 
   defp _get_reason_field(_, field), do: field
 
-  defp _validate_parsed_type(validate_funcs, %Changeset{} = changeset, opts) do
+  defp _validate_parsed_type(validate_funcs, %Changeset{} = changeset) do
     Enum.reduce(
       validate_funcs,
       changeset,

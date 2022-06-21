@@ -51,10 +51,13 @@ defmodule AprilWeb.ValidationController do
 
     array_map: [
       type: {
-        :array_map,
-        %{
-          id: [type: :string, required: true],
-          class: [type: :integer, required: true]
+        :array,
+        {
+          :map,
+          %{
+            id: [type: :string, required: true],
+            class: [type: :integer, required: true]
+          }
         }
       },
       length: [min: 3]
@@ -80,10 +83,13 @@ defmodule AprilWeb.ValidationController do
 
     array_perm: [
       type: {
-        :array_map,
-        %{
-          name: [type: {:schema_field, April.Permission}],
-          code: [type: {:schema_field, April.Permission, :codename}, required: true]
+        :array,
+        {
+          :map,
+          %{
+            name: [type: {:schema_field, April.Permission}],
+            code: [type: {:schema_field, April.Permission, :codename}, required: true]
+          }
         }
       },
       required: true
@@ -104,19 +110,25 @@ defmodule AprilWeb.ValidationController do
           ],
           perms: [
             type: {
-              :array_map,
-              %{
-                name: [type: {:schema_field, April.Permission}],
-                code: [type: {:schema_field, April.Permission, :codename}, required: true]
-              },
+              :array,
+              {
+                :map,
+                %{
+                  name: [type: {:schema_field, April.Permission}],
+                  code: [type: {:schema_field, April.Permission, :codename}, required: true]
+                }
+              }
             },
             required: true,
             length: [min: 1]
           ],
           schema_perms: [
             type: {
-              :array_schema,
-              April.Permission
+              :array,
+              {
+                :schema,
+                April.Permission
+              }
             },
             required: true
           ],
@@ -168,12 +180,12 @@ defmodule AprilWeb.ValidationController do
       required: true
     ],
     array_temp: [
-      type: {:array_field, April.Room, :temp},
+      type: {:array, {:schema_field, April.Room, :temp}},
       length: [min: 1, max: 3],
       required: true
     ],
     array_color: [
-      type: {:array_field, April.Room, :color},
+      type: {:array, {:schema_field, April.Room, :color}},
       elem_validate: [
         length: [min: 4]
       ]

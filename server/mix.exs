@@ -44,6 +44,8 @@ defmodule April.MixProject do
       {:guardian, "~> 2.0"},
       {:guardian_db, "~> 2.0"},
       {:argon2_elixir, "~> 3.0"},
+      {:scrivener_ecto, "~> 2.7"},
+      {:cors_plug, "~> 3.0"}
     ]
   end
 

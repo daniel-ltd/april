@@ -47,7 +47,7 @@ defmodule AprilWeb.SessionController do
 
   def info(conn, _) do
     current_resource = April.Auth.Guardian.Plug.current_resource(conn)
-    April.UserManager.get_all_user_perm(current_resource.id) |> IO.inspect()
+    # April.UserManager.get_all_user_perm(current_resource.id) |> IO.inspect()
     json(conn, "Test")
   end
 end

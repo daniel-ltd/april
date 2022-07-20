@@ -20,6 +20,7 @@ defmodule AprilWeb.Router do
     post "/sign_in", SessionController, :sign_in
     post "/validate", ValidationController, :validate
     post "/validate/array", ValidationController, :validate_array
+    post "/validate/map", ValidationController, :validate_map
 
     pipe_through :ensure_auth
     post "/sign_out", SessionController, :sign_out

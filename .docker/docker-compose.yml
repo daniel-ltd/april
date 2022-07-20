@@ -1,5 +1,5 @@
 version: "3.9"
-   
+
 services:
   mysql:
     image: mysql:8.0
@@ -15,7 +15,7 @@ services:
       MYSQL_PASSWORD: april_admin
 
   phpmyadmin:
-    image: phpmyadmin
+    build: ./phpmyadmin
     container_name: april_phpmyadmin
     ports:
       - 4002:80

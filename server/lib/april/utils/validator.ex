@@ -6,7 +6,7 @@ defmodule April.Validator do
   }
 
   @type type_validate :: [
-          type: atom() | {:array, atom()} | {:array, map()},
+          type: atom() | {:array, atom()} | {:map, atom()} | {:joined_string, atom()},
           acceptance: [],
           change:
             (atom(), term() -> [{atom(), String.t()} | {atom(), {String.t(), Keyword.t()}}]),
@@ -106,8 +106,7 @@ defmodule April.Validator do
           number: ...
           required: ...
 
-          items: [
-            type: :map,
+          values: [
             properties: %{},
             length: ...
             number: ...
@@ -120,8 +119,14 @@ defmodule April.Validator do
       types = %{
         array_item: [
           type: {:array, :string | :integer | :boolean},
+          length: ...
+          number: ...
+          required: ...
+
           items: [
-            number: [min: 0, max: 6]
+            length: ...
+            number: ...
+            required: ...
           ]
         ]
       }
@@ -135,8 +140,24 @@ defmodule April.Validator do
           required: ...
 
           items: [
-            type: :map,
             properties: %{},
+            length: ...
+            number: ...
+            required: ...
+          ]
+        ]
+      }
+
+    - Validate joined string
+      types = %{
+        joined_id: [
+          type: {:joined_string, :integer | :string},
+          splitter: [pattern: [","], parts: :infinity, trim: true],
+          length: ...
+          number: ...
+          required: ...
+
+          items: [
             length: ...
             number: ...
             required: ...
@@ -147,9 +168,8 @@ defmodule April.Validator do
   @spec parse(types, map | Enum.t(), Keyword.t()) :: Ecto.Changeset.t() | nil
   def parse(types, params, opts \\ [])
 
-  def parse(nil, [_ | _] = params, _opts), do: %Changeset{valid?: true, changes: params}
   def parse(nil, _params, _opts), do: nil
-  def parse(_types, nil, _opts), do: %Changeset{valid?: true, changes: nil}
+  def parse(_types, nil, _opts), do: nil
   def parse(_types, [], _opts), do: nil
 
   # parse a map
@@ -209,10 +229,10 @@ defmodule April.Validator do
   end
 
   # parse map values
-  def parse(%{} = types, [{key, _value} | rest] = params, opts) do
+  def parse(%{} = types, [{_key, _value} | _rest] = params, opts) do
     result =
       Enum.reduce(params, {%{}, []}, fn
-        {field, nil}, {success, failure} ->
+        {_field, nil}, {success, failure} ->
           {success, failure}
 
         {field, el}, {success, failure} ->
@@ -255,9 +275,6 @@ defmodule April.Validator do
           case parse(types, el, opts) do
             %Changeset{valid?: true, changes: %{@item_property => changes}} ->
               {success ++ [changes], failure, index + 1}
-
-            # %Changeset{valid?: true, changes: changes} when changes == %{} ->
-            #   {success, failure, index + 1}
 
             %Changeset{valid?: true, changes: changes} ->
               {success ++ [changes], failure, index + 1}
@@ -311,7 +328,7 @@ defmodule April.Validator do
 
       case parse(field_type, field_value, opts) do
         %Changeset{valid?: true, changes: changes} ->
-          Changeset.update_change(cs, field, fn _ -> changes end)
+          Changeset.change(cs, %{field => changes})
 
         %Changeset{valid?: false, errors: errors} ->
           errors =
@@ -322,7 +339,7 @@ defmodule April.Validator do
           cs = %{cs | errors: errors ++ cs.errors, valid?: errors == [] and cs.valid?}
 
           case Keyword.get(meta_type, :type) do
-            {:joined_string, item_type} ->
+            {:joined_string, _item_type} ->
               Changeset.add_error(
                 cs,
                 field,
@@ -336,7 +353,7 @@ defmodule April.Validator do
           end
 
         _ ->
-          cs
+          Changeset.change(cs, %{field => field_value})
       end
     end)
   end
@@ -353,18 +370,10 @@ defmodule April.Validator do
         _get_properties_type(Keyword.get(meta_type, :items))
 
       {:array, item_type} ->
-        with item_types when is_list(item_types) <- Keyword.get(meta_type, :items) do
-          %{@item_property => item_types ++ [type: item_type]}
-        else
-          _ -> nil
-        end
+        _get_items_type(Keyword.get(meta_type, :items), item_type)
 
       {:joined_string, item_type} ->
-        with item_types when is_list(item_types) <- Keyword.get(meta_type, :items) do
-          %{@item_property => item_types ++ [type: item_type]}
-        else
-          _ -> nil
-        end
+        _get_items_type(Keyword.get(meta_type, :items), item_type)
 
       _ ->
         nil
@@ -373,6 +382,11 @@ defmodule April.Validator do
 
   defp _get_properties_type(nil), do: nil
   defp _get_properties_type(meta_type), do: Keyword.get(meta_type, :properties)
+
+  defp _get_items_type([{_key, _value} | _rest] = meta_type, item_type),
+    do: %{@item_property => [{:type, item_type} | meta_type]}
+
+  defp _get_items_type(_, _), do: nil
 
   defp _get_nested_change(meta_type, changeset, field) do
     with change when not is_nil(change) <- Changeset.get_change(changeset, field) do
@@ -383,42 +397,35 @@ defmodule April.Validator do
         {:array, :map} ->
           change
 
-        {:array, item_type} ->
-          with item_types when is_list(item_types) <- Keyword.get(meta_type, :items) do
-            Enum.map(change, fn
-              nil -> nil
-              el -> %{@item_property => el}
-            end)
-          else
-            _ -> change
-          end
+        {:array, _item_type} ->
+          _convert_items(change, Keyword.get(meta_type, :items))
 
-        {:joined_string, item_type} ->
+        {:joined_string, _item_type} ->
           split = Keyword.get(meta_type, :splitter, []) ++ @default_split_opts
 
-          change =
-            apply(String, :split, [
-              change,
-              Keyword.get(split, :pattern),
-              [trim: true] ++ Keyword.take(split, [:parts])
-            ])
-
-          with item_types when is_list(item_types) <- Keyword.get(meta_type, :items) do
-            Enum.map(change, fn
-              nil -> nil
-              el -> %{@item_property => el}
-            end)
-          else
-            _ -> change
-          end
+          change
+          |> String.split(
+            Keyword.get(split, :pattern),
+            [trim: true] ++ Keyword.take(split, [:parts])
+          )
+          |> _convert_items(Keyword.get(meta_type, :items))
 
         _ ->
           change
       end
     else
-      change -> change
+      _ -> nil
     end
   end
+
+  defp _convert_items(change, item_types) when is_list(item_types) do
+    Enum.map(change, fn
+      nil -> nil
+      el -> %{@item_property => el}
+    end)
+  end
+
+  defp _convert_items(change, _), do: change
 
   @array_types [:array, :map, :joined_string]
   defp _get_reason_field({field_type, _}, field) when field_type in @array_types, do: field

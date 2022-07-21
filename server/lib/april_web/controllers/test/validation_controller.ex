@@ -37,26 +37,26 @@ defmodule AprilWeb.ValidationController do
     #   ],
     #   required: true
     # ],
-    # array_integer: [type: {:array, :integer}, required: true],
-    # array_string: [type: {:array, :string}, required: true],
-    # array_map: [
-    #   type: {:array, :map},
-    #   items: [
-    #     properties: %{
-    #       id: [type: :string, required: true],
-    #       class: [type: :integer, required: true]
-    #     }
-    #   ],
-    #   length: [min: 3]
-    # ],
-    # array_item: [
-    #   type: {:array, :integer},
-    #   items: [
-    #     number: [greater_than: 2, less_than: 15],
-    #     required: true
-    #   ],
-    #   required: true
-    # ],
+    array_integer: [type: {:array, :integer}, required: true],
+    array_string: [type: {:array, :string}, required: true],
+    array_map: [
+      type: {:array, :map},
+      items: [
+        properties: %{
+          id: [type: :string, required: true],
+          class: [type: :integer, required: true]
+        }
+      ],
+      length: [min: 3]
+    ],
+    array_item: [
+      type: {:array, :integer},
+      items: [
+        number: [greater_than: 2, less_than: 15],
+        required: true
+      ],
+      required: true
+    ],
     info: [
       type: :map,
       properties: %{
@@ -78,37 +78,40 @@ defmodule AprilWeb.ValidationController do
           required: true,
           length: [min: 1]
         ],
-        temp: [type: :boolean],
-        joined_id: [
-          type: {:joined_string, :integer},
-          items: [
-            number: [greater_than: 3, less_than: 15]
-          ],
-          length: [min: 3],
-          required: true
-        ],
-        joined_name: [
-          type: {:joined_string, :string},
-          splitter: [pattern: ~r{,}],
-          length: [min: 3],
-          required: true
-        ]
+        temp: [type: :boolean]
+        # joined_id: [
+        #   type: {:joined_string, :integer},
+        #   items: [
+        #     number: [greater_than: 3, less_than: 15]
+        #   ],
+        #   length: [min: 3],
+        #   required: true
+        # ],
+        # joined_name: [
+        #   type: {:joined_string, :string},
+        #   splitter: [pattern: ~r{,}],
+        #   length: [min: 3],
+        #   required: true
+        # ]
       },
       required: true
+    ],
+
+    joined_id: [
+      type: {:joined_string, :integer},
+      # splitter: [pattern: [","], parts: :infinity, trim: true],
+      items: [
+        number: [greater_than: 3, less_than: 15]
+      ],
+      length: [min: 3],
+      required: true
+    ],
+    joined_name: [
+      type: {:joined_string, :string},
+      splitter: [pattern: ~r{,}],
+      length: [min: 3],
+      required: true
     ]
-
-    # joined_name: [type: :joined_string],
-    # joined_name: [type: {:joined_string, :integer | ValidateType | {:schema_field, Schema, :field}}],
-
-    # joined_id: [
-    #   type: {:joined_string, :integer},
-    #   splitter: [pattern: [], parts: :infinity, trim: true],
-    #   items: [
-    #     number: [greater_than: 3, less_than: 15]
-    #   ],
-    #   length: [min: 10],
-    #   required: true
-    # ]
   }
   @api_permissions ["add_user", "change_user"]
   def validate(conn, params) do

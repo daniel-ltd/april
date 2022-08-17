@@ -1,5 +1,5 @@
-version: "3.9"
-   
+version: '3.9'
+
 services:
   mysql:
     image: mysql:8.0
@@ -7,7 +7,7 @@ services:
     volumes:
       - ./mysql:/var/lib/mysql
     ports:
-      - 4003:3306
+      - 4004:3306
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: april_dev
@@ -26,6 +26,30 @@ services:
       PMA_PASSWORD: april_admin
     depends_on:
       - mysql
+
+  mongo:
+    image: mongo:4.0
+    container_name: april_mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: april_admin
+      MONGO_INITDB_ROOT_PASSWORD: april_admin
+      MONGO_INITDB_DATABASE: april_dev
+    ports:
+      - 4005:27017
+
+  mongo-express:
+    image: mongo-express
+    container_name: april_mongo-express
+    restart: always
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: april_admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: april_admin
+      ME_CONFIG_MONGODB_AUTH_DATABASE: april_dev
+      ME_CONFIG_MONGODB_URL: mongodb://april_admin:april_admin@mongo:27017/
+    ports:
+      - 4003:8081
+    depends_on:
+      - mongo
 
   server:
     build: ./elixir

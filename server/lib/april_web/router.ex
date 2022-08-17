@@ -7,5 +7,7 @@ defmodule AprilWeb.Router do
 
   scope "/api", AprilWeb do
     pipe_through :api
+
+    get "/test", TestController, :test
   end
 end

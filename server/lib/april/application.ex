@@ -10,6 +10,16 @@ defmodule April.Application do
     children = [
       # Start the Ecto repository
       April.Repo,
+      {Mongo,
+       [
+         name: :mongo,
+         database: "april_dev",
+         auth_source: "admin",
+         hostname: "mongo",
+         username: "april_admin",
+         password: "april_admin",
+         pool_size: 10
+       ]},
       # Start the Telemetry supervisor
       AprilWeb.Telemetry,
       # Start the PubSub system

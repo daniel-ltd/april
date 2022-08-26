@@ -10,6 +10,17 @@ config :april, April.Repo,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
 
+config :april, April.MongoRepo,
+  database: "april_dev",
+  auth_source: "admin",
+  hostname: "mongo",
+  username: "april_admin",
+  password: "april_admin",
+  pool_size: 10,
+  timeout: 60_000,
+  idle_interval: 10_000,
+  queue_target: 5_000
+
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #
